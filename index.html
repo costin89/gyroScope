@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <title>Gyroskop-Steuerung mit three.js</title>
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+      }
+      #permissionButton {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        padding: 10px 20px;
+        background: #fff;
+        border: 1px solid #000;
+        z-index: 100;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Button zur Anforderung der Gyroskop-Permission -->
+    <button id="permissionButton">Gyroskopzugriff anfragen</button>
+    
+    <!-- three.js von CDN laden -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
+    <script>
+      let scene, camera, renderer;
+      
+      init();
+      animate();
+
+      function init() {
+        // Szene, Kamera und Renderer initialisieren
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 0, 5);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Ein einfaches Objekt zur Visualisierung (z.B. ein Würfel)
+        const geometry = new THREE.BoxGeometry();
+        const material = new THREE.MeshNormalMaterial();
+        const cube = new THREE.Mesh(geometry, material);
+        scene.add(cube);
+
+        window.addEventListener('resize', onWindowResize, false);
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      // Button-Event zum Anfordern der Erlaubnis für den Gyroskopzugriff
+      const permissionButton = document.getElementById('permissionButton');
+      permissionButton.addEventListener('click', function() {
+        // Prüfen, ob ein Permission-Request nötig ist (z.B. iOS 13+)
+        if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+          DeviceOrientationEvent.requestPermission()
+            .then(response => {
+              if (response === 'granted') {
+                window.addEventListener('deviceorientation', handleOrientation, true);
+                permissionButton.style.display = 'none';
+              } else {
+                alert('Zugriff nicht erlaubt');
+              }
+            })
+            .catch(console.error);
+        } else {
+          // Bei anderen Geräten direkt das Event abonnieren
+          window.addEventListener('deviceorientation', handleOrientation, true);
+          permissionButton.style.display = 'none';
+        }
+      });
+
+      // Event-Handler für DeviceOrientation-Ereignisse
+      function handleOrientation(event) {
+        // alpha: Drehung um die Z-Achse (yaw)
+        // beta: Drehung um die X-Achse (pitch)
+        // gamma: Drehung um die Y-Achse (roll)
+        // Werte werden von Grad in Radiant umgerechnet
+        const alpha = event.alpha ? THREE.Math.degToRad(event.alpha) : 0;
+        const beta = event.beta ? THREE.Math.degToRad(event.beta) : 0;
+        const gamma = event.gamma ? THREE.Math.degToRad(event.gamma) : 0;
+        
+        // Hier wird eine einfache Übertragung der Winkel auf die Kamerarotation durchgeführt.
+        // Je nach Anwendung kann es notwendig sein, die Achsen neu zu ordnen oder weitere Korrekturen vorzunehmen.
+        camera.rotation.set(beta, alpha, -gamma, 'YXZ');
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+      }
+    </script>
+  </body>
+</html>
