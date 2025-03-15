@@ -8,27 +8,34 @@
         margin: 0;
         overflow: hidden;
       }
-      #permissionButton {
+      #permissionButton, #syncButton {
         position: absolute;
         top: 20px;
-        left: 20px;
         padding: 10px 20px;
         background: #fff;
         border: 1px solid #000;
         z-index: 100;
         cursor: pointer;
       }
+      #permissionButton {
+        left: 20px;
+      }
+      #syncButton {
+        left: 240px;
+      }
     </style>
   </head>
   <body>
     <!-- Button zur Anforderung der Gyroskop-Permission -->
     <button id="permissionButton">Gyroskopzugriff anfragen</button>
+    <!-- Button zur Übertragung der Kamera-Drehung auf das Objekt -->
+    <button id="syncButton">Kamera-Drehung auf Objekt übertragen</button>
     
     <!-- three.js von CDN laden -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     
     <script>
-      let scene, camera, renderer;
+      let scene, camera, renderer, cube;
       
       init();
       animate();
@@ -46,7 +53,7 @@
         // Ein einfaches Objekt zur Visualisierung (z.B. ein Würfel)
         const geometry = new THREE.BoxGeometry();
         const material = new THREE.MeshNormalMaterial();
-        const cube = new THREE.Mesh(geometry, material);
+        cube = new THREE.Mesh(geometry, material);
         scene.add(cube);
 
         window.addEventListener('resize', onWindowResize, false);
@@ -61,7 +68,6 @@
       // Button-Event zum Anfordern der Erlaubnis für den Gyroskopzugriff
       const permissionButton = document.getElementById('permissionButton');
       permissionButton.addEventListener('click', function() {
-        // Prüfen, ob ein Permission-Request nötig ist (z.B. iOS 13+)
         if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
           DeviceOrientationEvent.requestPermission()
             .then(response => {
@@ -74,9 +80,16 @@
             })
             .catch(console.error);
         } else {
-          // Bei anderen Geräten direkt das Event abonnieren
           window.addEventListener('deviceorientation', handleOrientation, true);
           permissionButton.style.display = 'none';
+        }
+      });
+
+      // Button-Event zum Übertragen der Kamera-Drehung auf das Objekt
+      const syncButton = document.getElementById('syncButton');
+      syncButton.addEventListener('click', function() {
+        if (cube && camera) {
+          cube.rotation.copy(camera.rotation);
         }
       });
 
@@ -85,13 +98,12 @@
         // alpha: Drehung um die Z-Achse (yaw)
         // beta: Drehung um die X-Achse (pitch)
         // gamma: Drehung um die Y-Achse (roll)
-        // Werte werden von Grad in Radiant umgerechnet
+        // Umrechnung von Grad in Radiant
         const alpha = event.alpha ? THREE.Math.degToRad(event.alpha) : 0;
         const beta = event.beta ? THREE.Math.degToRad(event.beta) : 0;
         const gamma = event.gamma ? THREE.Math.degToRad(event.gamma) : 0;
         
-        // Hier wird eine einfache Übertragung der Winkel auf die Kamerarotation durchgeführt.
-        // Je nach Anwendung kann es notwendig sein, die Achsen neu zu ordnen oder weitere Korrekturen vorzunehmen.
+        // Übertragung der Gyroskopdaten auf die Kamerarotation
         camera.rotation.set(beta, alpha, -gamma, 'YXZ');
       }
 
