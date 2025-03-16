@@ -1,126 +1,151 @@
 <!DOCTYPE html>
 <html lang="de">
-  <head>
+<head>
     <meta charset="UTF-8" />
-    <title>Gyroskop-gesteuerte Three.js Kamera</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Multiplayer Canvas Steuerung mit WebSocket</title>
     <style>
-      body {
-        margin: 0;
-        overflow: hidden;
-      }
-      #startButton {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        font-size: 20px;
-        padding: 10px 20px;
-        z-index: 10;
-      }
+        canvas {
+            border: 1px solid black;
+            display: block;
+            margin: 10px auto;
+        }
+        body {
+            text-align: center;
+            font-family: sans-serif;
+        }
+        #status {
+            margin-top: 10px;
+            color: green;
+            font-weight: bold;
+        }
     </style>
-  </head>
-  <body>
-    <!-- Button zum Anfordern der Berechtigung -->
-    <button id="startButton">Gyroskop starten</button>
+</head>
+<body>
+    <h1>Multiplayer-Demo</h1>
+    <input type="text" id="serverIp" placeholder="Server IP" />
+    <input type="text" id="serverPort" placeholder="Port" />
+    <input type="text" id="username" placeholder="Dein Name" />
+    <button onclick="connectWebSocket()">Verbinden</button>
+    <p id="status"></p>
+    <canvas id="gameCanvas" width="500" height="500"></canvas>
 
-    <!-- three.js von einem CDN einbinden -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
-      // Szene, Kamera und Renderer initialisieren
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(
-        75,
-        window.innerWidth / window.innerHeight,
-        0.1,
-        1000
-      );
-      const renderer = new THREE.WebGLRenderer();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      document.body.appendChild(renderer.domElement);
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const size = 50;
+        const speed = 5;
 
-      // Ein Würfel als Referenzobjekt in der Szene
-      const geometry = new THREE.BoxGeometry();
-      const material = new THREE.MeshNormalMaterial();
-      const cube = new THREE.Mesh(geometry, material);
-      scene.add(cube);
+        let ws;
+        let username;
+        let players = {}; 
 
-      camera.position.z = 5;
-
-      // Animationsschleife
-      function animate() {
-        requestAnimationFrame(animate);
-        renderer.render(scene, camera);
-      }
-      animate();
-
-      // Funktion zur Behandlung der DeviceOrientation-Events
-      function handleOrientation(event) {
-        // Auslesen der Rohwerte (in Grad)
-        let beta = event.beta || 0;   // pitch
-        let gamma = event.gamma || 0; // roll
-        let alpha = event.alpha || 0; // yaw
-
-        // Ermitteln der aktuellen Ausrichtung des Geräts (Portrait oder Landscape)
-        // window.orientation liefert meist 0 (Portrait), 90 oder -90 (Landscape)
-        let orientation = window.orientation || 0;
-        let adjustedBeta = beta;
-        let adjustedGamma = gamma;
-        let adjustedAlpha = alpha;
-
-        if (orientation === 90 || orientation === -90) {
-          // Im Landscape-Modus können beta und gamma vertauscht bzw. invertiert werden
-          adjustedBeta = gamma;
-          adjustedGamma = -beta;
-        }
-        // Umrechnung in Radianten
-        const pitch = THREE.Math.degToRad(adjustedBeta);
-        const roll = THREE.Math.degToRad(adjustedGamma);
-        const yaw = THREE.Math.degToRad(adjustedAlpha);
-
-        // Anwendung der Winkel auf die Kamera.
-        // Hier wird ein Euler-Winkel-System (YXZ) genutzt, das oft für Kamera-Rotationen sinnvoll ist.
-        camera.rotation.set(pitch, yaw, roll, 'YXZ');
-
-        // Zum Debuggen können die Werte in der Konsole ausgegeben werden:
-        // console.log(`Pitch: ${pitch.toFixed(2)}, Roll: ${roll.toFixed(2)}, Yaw: ${yaw.toFixed(2)}`);
-      }
-
-      // Initialisierung des Gyroskops inkl. Berechtigungsanfrage (wichtig z.B. auf iOS)
-      function initGyro() {
-        if (window.DeviceOrientationEvent) {
-          // Für iOS 13+ muss explizit um Erlaubnis gefragt werden
-          if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-            DeviceOrientationEvent.requestPermission()
-              .then((permissionState) => {
-                if (permissionState === 'granted') {
-                  window.addEventListener('deviceorientation', handleOrientation, true);
-                  document.getElementById('startButton').style.display = 'none';
-                } else {
-                  alert("Berechtigung für den Gyroskop-Zugriff wurde nicht erteilt.");
+        function drawSquares() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (const user in players) {
+                if (players[user]) {
+                    ctx.fillStyle = players[user].color;
+                    ctx.fillRect(players[user].x, players[user].y, size, size);
+                    ctx.fillStyle = "black";
+                    ctx.fillText(user, players[user].x + 5, players[user].y - 5);
                 }
-              })
-              .catch((error) => {
-                console.error("Fehler bei der Berechtigungsanfrage:", error);
-              });
-          } else {
-            // Für Geräte/Browsers, die keine explizite Anfrage benötigen
-            window.addEventListener('deviceorientation', handleOrientation, true);
-            document.getElementById('startButton').style.display = 'none';
-          }
-        } else {
-          alert("DeviceOrientationEvent wird von diesem Gerät/Broswer nicht unterstützt.");
+            }
         }
-      }
 
-      // Event-Listener für den Start-Button
-      document.getElementById('startButton').addEventListener('click', initGyro);
+        function sendCoordinates() {
+            if (ws && ws.readyState === WebSocket.OPEN && players[username]) {
+                ws.send(JSON.stringify({
+                    user: username,
+                    x: players[username].x,
+                    y: players[username].y,
+                    color: players[username].color
+                }));
+            }
+        }
 
-      // Anpassen der Renderer-Größe bei Fensteränderung
-      window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-      });
+        function connectWebSocket() {
+            username = document.getElementById("username").value;
+            const serverIp = document.getElementById("serverIp").value;
+            const serverPort = document.getElementById("serverPort").value;
+            
+            if (!username || !serverIp || !serverPort) {
+                alert("Bitte alle Felder ausfüllen!");
+                return;
+            }
+            
+            document.getElementById("username").disabled = true;
+            document.getElementById("serverIp").disabled = true;
+            document.getElementById("serverPort").disabled = true;
+            document.querySelector("button").disabled = true;
+
+            ws = new WebSocket(`ws://${serverIp}:${serverPort}`);
+
+            ws.onopen = () => {
+                document.getElementById("status").textContent = "Verbunden als " + username;
+                players[username] = {
+                    x: canvas.width / 2 - size / 2,
+                    y: canvas.height / 2 - size / 2,
+                    color: getRandomColor()
+                };
+                drawSquares();
+                sendCoordinates();
+            };
+
+            ws.onmessage = (event) => {
+                players = JSON.parse(event.data);
+                drawSquares();
+            };
+
+            ws.onclose = () => {
+                document.getElementById("status").textContent = "Verbindung geschlossen";
+            };
+
+            ws.onerror = (err) => {
+                console.error("WebSocket-Fehler:", err);
+                document.getElementById("status").textContent = "Verbindungsfehler!";
+            };
+        }
+
+        document.addEventListener("keydown", (event) => {
+            if (!players[username]) return;
+
+            let moved = false;
+            switch (event.key) {
+                case "w":
+                    if (players[username].y - speed >= 0) {
+                        players[username].y -= speed;
+                        moved = true;
+                    }
+                    break;
+                case "a":
+                    if (players[username].x - speed >= 0) {
+                        players[username].x -= speed;
+                        moved = true;
+                    }
+                    break;
+                case "s":
+                    if (players[username].y + speed + size <= canvas.height) {
+                        players[username].y += speed;
+                        moved = true;
+                    }
+                    break;
+                case "d":
+                    if (players[username].x + speed + size <= canvas.width) {
+                        players[username].x += speed;
+                        moved = true;
+                    }
+                    break;
+            }
+
+            if (moved) {
+                drawSquares();
+                sendCoordinates();
+            }
+        });
+
+        function getRandomColor() {
+            return "#" + Math.floor(Math.random() * 16777215).toString(16);
+        }
     </script>
-  </body>
+</body>
 </html>
